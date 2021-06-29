@@ -2,14 +2,23 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <dirent.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <linux/limits.h>
+
+typedef struct _header {
+    char type_id ;
+    size_t name_size ;
+    size_t data_size ;
+} Header ;
 
 void
 get_parameters (int argc, int ** argv, char option, char * star_file, char * star_dir)
 {
     /*
         Comman line interface
-        ./star archive <archive-file-name> <target directory path> -> zip
+        ./star archive <archive-file-name> <target directoxry path> -> zip
         ./star list <archive-file-name> -> show the paths of all files aggregated in the <archive-file-name>
         ./star extract <archive-file-name> -> restore all files and directories archived in <archive-file-name>
 
@@ -99,6 +108,165 @@ get_parameters (int argc, int ** argv, char option, char * star_file, char * sta
     }
 }
 
+/*
+    1개의 파일에 대해 동작하는 프로그램 만들기
+
+    1. archive 인 경우
+
+    
+
+        * header 구조체 선언
+        * stat 으로 star_dir 의 정보를 읽는다 (type_id, data_size) -> header 구조체에 저장한다
+            * directory일 경우 length가 0이어야 한다!!
+        * star_dir의 이름의 크기를 header 구조체에 저장한다.
+        * return header...
+
+        * star_file 이라는 이름으로 새로운 파일을 연다. (write)
+        * header structure 의 정보를 쓴다
+        
+        * star_dir 파일의 이름을 쓴다
+        * directory면 contents를 쓰지 않는다...
+        * -> directory가 아니면
+            * star_dir 파일을 연다 (read)
+            * star_dir 의 내용을 읽으며 그 뒤에 바로 이어 쓴다.
+
+        * closedir, fclose, ...
+        
+        Q. 읽으면서 바로 write 하는게 나을까? 아니면 파일을 읽는 과정과 쓰는 과정을 분리하는게 좋을까? -> 읽으면서 write 해보자
+        Q. 파일 이름의 크기를 따로 저장해 둬야 할 것 같다 
+        data strucrue : 파일명의 크기 - 파일명 - 파일 내용의 크기 - 파일 내용 ? (v)
+                        or 파일명의 크기 - 파일 내용의 크기 - 파일명 - 파일 내용 ?
+
+    2. extract 인 경우
+
+        * star_file 이라는 이름의 파일을 연다.
+
+        * header 에서 파일이름의 크기를 읽는다 -> 그 크기 만큼의 파일 이름을 읽는다.
+        
+        * 읽어낸 이름으로 새로운 파일을 연다.
+        * header 에서 파일내용의 크기를 읽는다
+        * 읽어낸 크기 만큼의 파일 내용을 읽으며 새로 열린 파일에 쓴다.
+
+        * closedir, fclose, ...
+
+    3. list 인 경우
+
+        * star_file 이라는 이름의 파일을 연다.
+
+        * header 에서 파일이름의 크기를 읽는다 -> 그 크기 만큼의 파일 이름을 읽는다
+        * 읽어낸 파일 이름을 출력한다.
+
+        * header 에서 파일 내용의 크기를 읽는다
+        * 그 크기 만큼 file pointer를 이동시킨다 -> how ?
+            * fseek(SEEKK_CUR, 읽어낸 크기) ?
+
+    Q. 어느 정도를 함수로 만들어야 할까
+    
+*/
+
+Header *
+read_header_data(char * dir)  
+{
+    Header * new_header ;
+    
+    struct stat * st ;
+    stat(dir, st) ;
+    
+    new_header->data_size = st->size ;
+    
+    if (S_ISDIR(st->st_mode)) {
+        new_header->type_id = 0 ;
+    }
+    else {  /* Q. any other case..? */
+        new_header->type_id = 1 ;
+    }
+
+    new_header->name_size = strlen(dir) ;
+
+    return new_header ;
+}
+
+FILE *
+write_header_data(FILE * w_fp, Header * h)
+{
+    if (sizeof(h->type_id) != fwrite(&h->type_id, 1, sizeof(h->type_id), w_fp)) {
+        perror("ERROR: fwrite - h->type_id") ;
+        exit(1) ;
+    }
+    if (sizeof(h->name_size) != fwrite(&h->name_size, 1, sizeof(h->name_size), w_fp)) {
+        perror("ERROR: fwrite - h->name_size") ;
+        exit(1) ;
+    }
+    if (sizeof(h->data_size) != fwrite(&h->data_size, 1, sizeof(h->data_size), w_fp)) {
+        perror("ERROR: fwrite - h->data_size") ;
+        exit(1) ;
+    }
+
+    return w_fp ;
+}
+
+FILE *
+write_contents_data(FILE * w_fp, Header * h, char * target_path)
+{
+    if (h->name_size != fwrite(target_path, 1, h->name_size, w_fp)) {
+        perror("ERROR: fwrite - star_dir") ;
+        exit(1) ;
+    }
+
+    if (h->type_id == 1) {   // not a directory!
+        FILE * r_fp = fopen(target_path , "rb") ;
+        if (r_fp == NULL) {
+            perror("ERROR: fopen - target_path") ; 
+            exit(1) ;
+        }
+
+        size_t r_len ;
+        char buffer[512] ;
+        while (feof(r_fp) == 0) {
+            r_len = fread(buffer, 1, r_len, w_fp) ;
+            if (r_len != fwrite(buffer, 1, r_len, w_fp)) {
+                perror("ERROR: fwrite - file contetns") ;
+                exit(1) ;
+            }
+        }       
+        fclose(r_fp) ;
+    }
+
+    fclose(w_fp) ;
+}
+
+void
+archive (char * star_file, char * star_dir) 
+{
+    
+    Header * new_header = read_header_data(star_dir) ;
+    
+    FILE * w_fp ;
+    w_fp = fopen(star_file, 'wb') ;
+    if(r_fp == NULL) {
+        perror("ERROR: Failed to open a file") ;
+        exit(1) ;
+    }
+
+    w_fp = write_header_data(w_fp, new_header) ;
+    w_fp = write_contents_data(w_fp, new_header, star_dir) ;
+
+    fclose(w_fp) ;
+}
+
+void
+extract (char * star_file, char * star_dir)
+{
+
+}
+
+void
+list (char * star_file, char * star_dir)
+{
+
+}
+
+
 int
 main (int argc, char ** argv)
 {
@@ -108,6 +276,18 @@ main (int argc, char ** argv)
     char * star_dir = "";
     get_parameters (argc, argv, option, star_file, star_dir) ;
 
+    if (option == 'a') {
+        archive(char * star_file, char * star_dir) ;
+    }
+    if (option == 'e') {
+        extract(char * star_file, char * star_dir) ;
+    }
+    if (option == 'l') {
+        list(char * star_file, char * star_dir) ;
+    }
+
+
+    
 
     return 0 ;
 }
