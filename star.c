@@ -217,11 +217,9 @@ write_contents_data (FILE * w_fp, Header * h, char * target_path)
         }
 
         size_t r_len ;
-        char buffer[512];
         while (feof(r_fp) == 0) {
-            // need to initialize buffer
+            char buffer[512];
             r_len = fread(buffer, 1, sizeof(buffer), r_fp) ;
-            printf("%s", buffer) ;
             if (r_len != fwrite(buffer, 1, r_len, w_fp)) {
                 perror("ERROR: fwrite - file contetns") ;
                 exit(1) ;
@@ -271,6 +269,10 @@ read_header (FILE * r_fp)
         perror("ERROR: fread - h->data_size") ;
         exit(1) ;
     }
+    if (h->name_size != fread(h->path_name, 1, h->name_size, r_fp)) {
+        perror("ERROR: fread - new file_name @open_new_file()") ;
+        exit(1) ;
+    }
 
     return h ;
 }
@@ -278,11 +280,11 @@ read_header (FILE * r_fp)
 FILE *
 open_new_file (FILE * r_fp, Header * h)
 {
-    char * file_name = (char *) malloc(sizeof(char) * h->name_size) ;
-    if (h->name_size != fread(file_name, 1, h->name_size, r_fp)) {
-        perror("ERROR: fread - new file_name @open_new_file()") ;
-        exit(1) ;
-    }
+    // char * file_name = (char *) malloc(sizeof(char) * h->name_size) ;
+    // if (h->name_size != fread(file_name, 1, h->name_size, r_fp)) {
+    //     perror("ERROR: fread - new file_name @open_new_file()") ;
+    //     exit(1) ;
+    // }
 
     FILE * n_fp = fopen(file_name, "wb") ;
     if (n_fp == NULL) {
