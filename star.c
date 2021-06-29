@@ -11,7 +11,7 @@ typedef struct _header {
     char type_id ;
     size_t name_size ;
     size_t data_size ;
-    char * path_name ;
+    char path_name[PATH_MAX] ;
 } Header ;
 
 void
@@ -85,8 +85,7 @@ get_parameters (int argc, char ** argv, char * option, char * star_file, char * 
         }
 
         *option = 'e' ;
-        star_file = argv[2] ;
-        star_dir = "" ;
+        strcpy(star_file, argv[2]) ;
     }
     if (strcmp(argv[1], "list") == 0) {
         if (argc != 3) {
@@ -100,8 +99,7 @@ get_parameters (int argc, char ** argv, char * option, char * star_file, char * 
         }
 
         *option = 'l' ;
-        star_file = argv[2] ;
-        star_dir = "" ;
+        strcpy(star_file, argv[2]) ;
     }
 }
 
@@ -109,8 +107,6 @@ get_parameters (int argc, char ** argv, char * option, char * star_file, char * 
     1개의 파일에 대해 동작하는 프로그램 만들기
 
     1. archive 인 경우
-
-    
 
         * header 구조체 선언
         * stat 으로 star_dir 의 정보를 읽는다 (type_id, data_size) -> header 구조체에 저장한다
@@ -183,10 +179,12 @@ make_header(char * dir)
 
     h->name_size = strlen(dir) ;
 
+    strcpy(h->path_name, dir) ;
+
     return h ;
 }
 
-FILE *
+void
 write_header_data(FILE * w_fp, Header * h)
 {
     if (sizeof(h->type_id) != fwrite(&h->type_id, 1, sizeof(h->type_id), w_fp)) {
@@ -201,19 +199,17 @@ write_header_data(FILE * w_fp, Header * h)
         perror("ERROR: fwrite - h->data_size") ;
         exit(1) ;
     }
-
-    return w_fp ;
+    if (h->name_size != fwrite(h->path_name, 1, h->name_size, w_fp)) {
+        perror("ERROR: fwrite - h->data_size") ;
+        exit(1) ;
+    }
 }
 
 void
 write_contents_data (FILE * w_fp, Header * h, char * target_path)
 {
-    if (h->name_size != fwrite(target_path, 1, h->name_size, w_fp)) {
-        perror("ERROR: fwrite - star_dir") ;
-        exit(1) ;
-    }
-
     if (h->type_id == 1) {   // not a directory!
+
         FILE * r_fp = fopen(target_path , "rb") ;
         if (r_fp == NULL) {
             perror("ERROR: fopen - target_path") ; 
@@ -221,9 +217,11 @@ write_contents_data (FILE * w_fp, Header * h, char * target_path)
         }
 
         size_t r_len ;
-        char buffer[512] ;
+        char buffer[512];
         while (feof(r_fp) == 0) {
-            r_len = fread(buffer, 1, r_len, w_fp) ;
+            // need to initialize buffer
+            r_len = fread(buffer, 1, sizeof(buffer), r_fp) ;
+            printf("%s", buffer) ;
             if (r_len != fwrite(buffer, 1, r_len, w_fp)) {
                 perror("ERROR: fwrite - file contetns") ;
                 exit(1) ;
@@ -245,8 +243,8 @@ archive (char * star_file, char * star_dir)
         exit(1) ;
     }
 
-    w_fp = write_header_data(w_fp, head) ;
-    write_contents_data(w_fp, head, star_file) ;
+    write_header_data(w_fp, head) ;
+    write_contents_data(w_fp, head, star_dir) ;
 
     free(head) ;
     rewind(w_fp) ;
@@ -254,6 +252,7 @@ archive (char * star_file, char * star_dir)
 }
 
 ///////////////////////////////////////////// extract /////////////////////////////////////////////
+// 헤더 구조에 맞춰 바꿔야 함!
 
 Header *
 read_header (FILE * r_fp)
