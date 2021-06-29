@@ -4,8 +4,8 @@
 #include <unistd.h>
 #include <linux/limits.h>
 
-int
-main (int argc, char ** argv)
+void
+get_parameters (int argc, int ** argv, char option, char * star_file, char * star_dir)
 {
     /*
         Comman line interface
@@ -33,7 +33,9 @@ main (int argc, char ** argv)
             file이나 directory를 열 때는 존재 유무 말고도 다른 문제가 발생할 수도 있으니까
             CLI에서 먼저 해두는 게 나을 것 같다고 판단하긴 했지만,,,
         Q. 아예 각 파라미터를 받는 함수를 따로..? Ex) get_option, get_file, get_dir ...
+            매 함수마다 option별 case를 나눠줘야 하는데, 이게 맞는 건지 사실 잘 모르겠다.
         Q. 파라미터를 받는 과정 전체를 함수로 만들어보려고 했는데, star_dir이 필요한 경우와 필요 없는 경우가 있어서 조금 고민..
+            어차피 변수는 선언할거니까 일단 함수로 빼 보자.
     */
 
     if (argc < 3 || (strcmp(argv[1], "archive") != 0 && strcmp(argv[1], "extract") != 0 && strcmp(argv[1], "list")) != 0) {
@@ -41,9 +43,6 @@ main (int argc, char ** argv)
         exit(1) ;
     }
 
-    char option ;   
-    char * star_file ;
-    char * star_dir ;
     if (strcmp(argv[1], "archive") == 0) {
         if (argc != 4) {
             perror("ERROR: star archive <archive-file-name> <target directory path>\n") ;
@@ -98,7 +97,16 @@ main (int argc, char ** argv)
 
         printf("It lists %s\n", star_file) ;
     }
+}
 
+int
+main (int argc, char ** argv)
+{
+    
+    char option  = '' ;   
+    char * star_file = "";
+    char * star_dir = "";
+    get_parameters (argc, argv, option, star_file, star_dir) ;
 
 
     return 0 ;
