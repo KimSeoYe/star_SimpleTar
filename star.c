@@ -11,10 +11,11 @@ typedef struct _header {
     char type_id ;
     size_t name_size ;
     size_t data_size ;
+    char * path_name ;
 } Header ;
 
 void
-get_parameters (int argc, int ** argv, char option, char * star_file, char * star_dir)
+get_parameters (int argc, char ** argv, char * option, char * star_file, char * star_dir)
 {
     /*
         Comman line interface
@@ -68,11 +69,9 @@ get_parameters (int argc, int ** argv, char option, char * star_file, char * sta
             exit(1) ;
         }
 
-        option = 'a' ;
-        star_file = argv[2] ;
-        star_dir = argv[3] ;
-
-        printf("It archives %s as %s\n", star_dir, star_file) ;
+        *option = 'a' ;
+        strcpy(star_file, argv[2]) ;
+        strcpy(star_dir, argv[3]) ;
     }
     if (strcmp(argv[1], "extract") == 0) {
         if (argc != 3) {
@@ -85,10 +84,9 @@ get_parameters (int argc, int ** argv, char option, char * star_file, char * sta
             exit(1) ;
         }
 
-        option = 'e' ;
+        *option = 'e' ;
         star_file = argv[2] ;
-
-        printf("It extracts %s\n", star_file) ;
+        star_dir = "" ;
     }
     if (strcmp(argv[1], "list") == 0) {
         if (argc != 3) {
@@ -101,10 +99,9 @@ get_parameters (int argc, int ** argv, char option, char * star_file, char * sta
             exit(1) ;
         }
 
-        option = 'l' ;
+        *option = 'l' ;
         star_file = argv[2] ;
-
-        printf("It lists %s\n", star_file) ;
+        star_dir = "" ;
     }
 }
 
@@ -141,10 +138,11 @@ get_parameters (int argc, int ** argv, char option, char * star_file, char * sta
 
         * star_file 이라는 이름의 파일을 연다.
 
-        * header 에서 파일이름의 크기를 읽는다 -> 그 크기 만큼의 파일 이름을 읽는다.
-        
+        * header structure를 읽는다
+
+        * h->name_size 만큼의 이름을 읽는다
         * 읽어낸 이름으로 새로운 파일을 연다.
-        * header 에서 파일내용의 크기를 읽는다
+        * h->data_size 만큼의 파일내용의 크기를 읽는다
         * 읽어낸 크기 만큼의 파일 내용을 읽으며 새로 열린 파일에 쓴다.
 
         * closedir, fclose, ...
@@ -164,26 +162,28 @@ get_parameters (int argc, int ** argv, char option, char * star_file, char * sta
     
 */
 
+///////////////////////////////////////////// archive /////////////////////////////////////////////
+
 Header *
-read_header_data(char * dir)  
+make_header(char * dir)  
 {
-    Header * new_header ;
+    Header * h = (Header *) malloc(sizeof(Header)) ;
     
     struct stat * st ;
     stat(dir, st) ;
     
-    new_header->data_size = st->size ;
+    h->data_size = st->st_size ;
     
     if (S_ISDIR(st->st_mode)) {
-        new_header->type_id = 0 ;
+        h->type_id = 0 ;
     }
     else {  /* Q. any other case..? */
-        new_header->type_id = 1 ;
+        h->type_id = 1 ;
     }
 
-    new_header->name_size = strlen(dir) ;
+    h->name_size = strlen(dir) ;
 
-    return new_header ;
+    return h ;
 }
 
 FILE *
@@ -205,8 +205,8 @@ write_header_data(FILE * w_fp, Header * h)
     return w_fp ;
 }
 
-FILE *
-write_contents_data(FILE * w_fp, Header * h, char * target_path)
+void
+write_contents_data (FILE * w_fp, Header * h, char * target_path)
 {
     if (h->name_size != fwrite(target_path, 1, h->name_size, w_fp)) {
         perror("ERROR: fwrite - star_dir") ;
@@ -231,37 +231,101 @@ write_contents_data(FILE * w_fp, Header * h, char * target_path)
         }       
         fclose(r_fp) ;
     }
-
-    fclose(w_fp) ;
 }
 
 void
 archive (char * star_file, char * star_dir) 
 {
-    
-    Header * new_header = read_header_data(star_dir) ;
+    Header * head = make_header(star_dir) ;
     
     FILE * w_fp ;
-    w_fp = fopen(star_file, 'wb') ;
-    if(r_fp == NULL) {
+    w_fp = fopen(star_file, "wb") ;
+    if(w_fp == NULL) {
         perror("ERROR: Failed to open a file") ;
         exit(1) ;
     }
 
-    w_fp = write_header_data(w_fp, new_header) ;
-    w_fp = write_contents_data(w_fp, new_header, star_dir) ;
+    w_fp = write_header_data(w_fp, head) ;
+    write_contents_data(w_fp, head, star_file) ;
 
+    free(head) ;
+    rewind(w_fp) ;
     fclose(w_fp) ;
 }
 
-void
-extract (char * star_file, char * star_dir)
-{
+///////////////////////////////////////////// extract /////////////////////////////////////////////
 
+Header *
+read_header (FILE * r_fp)
+{
+    Header * h = (Header *) malloc(sizeof(Header)) ;
+
+    if (sizeof(h->type_id) != fread(&h->type_id, 1, sizeof(h->type_id), r_fp)) {
+        perror("ERROR: fread - h->type_id") ;
+        exit(1) ;
+    }
+    if (sizeof(h->name_size) != fread(&h->name_size, 1, sizeof(h->name_size), r_fp)) {
+        perror("ERROR: fread - h->name_size") ;
+        exit(1) ;
+    }
+    if (sizeof(h->data_size) != fread(&h->data_size, 1, sizeof(h->data_size), r_fp)) {
+        perror("ERROR: fread - h->data_size") ;
+        exit(1) ;
+    }
+
+    return h ;
+}
+
+FILE *
+open_new_file (FILE * r_fp, Header * h)
+{
+    char * file_name = (char *) malloc(sizeof(char) * h->name_size) ;
+    if (h->name_size != fread(file_name, 1, h->name_size, r_fp)) {
+        perror("ERROR: fread - new file_name @open_new_file()") ;
+        exit(1) ;
+    }
+
+    FILE * n_fp = fopen(file_name, "wb") ;
+    if (n_fp == NULL) {
+        perror("ERROR: fopen - @open_new_file()") ; 
+        exit(1) ;
+    }
+
+    free(file_name) ;
+    return n_fp ;
 }
 
 void
-list (char * star_file, char * star_dir)
+write_new_file(FILE * w_fp, FILE * r_fp, Header * h) 
+{
+    // * h->data_size 만큼의 파일내용의 크기를 읽는다
+    // *** buffer size를 정해놓고 연속적으로 읽어야 함
+    // * 읽어낸 크기 만큼의 파일 내용을 읽으며 새로 열린 파일에 쓴다.
+}
+
+void
+extract (char * star_file)
+{
+    FILE * r_fp = fopen(star_file , "rb") ;
+    if (r_fp == NULL) {
+        perror("ERROR: fopen - star_file") ; 
+        exit(1) ;
+    }
+
+    Header * head = read_header(r_fp) ;
+    
+    FILE * n_fp = open_new_file(r_fp, head) ;
+    write_new_file(n_fp, r_fp, head) ;
+
+
+    free(head) ;
+    fclose(n_fp) ;
+}
+
+///////////////////////////////////////////// list /////////////////////////////////////////////
+
+void
+list (char * star_file)
 {
 
 }
@@ -271,23 +335,23 @@ int
 main (int argc, char ** argv)
 {
     
-    char option  = '' ;   
-    char * star_file = "";
-    char * star_dir = "";
-    get_parameters (argc, argv, option, star_file, star_dir) ;
+    char option ;   
+    // char * star_file ;
+    // char * star_dir ;
+    char star_file[PATH_MAX] ;
+    char star_dir[PATH_MAX] ;
+
+    get_parameters (argc, argv, &option, star_file, star_dir) ;
 
     if (option == 'a') {
-        archive(char * star_file, char * star_dir) ;
+        archive(star_file, star_dir) ;
     }
     if (option == 'e') {
-        extract(char * star_file, char * star_dir) ;
+        extract(star_file) ;
     }
     if (option == 'l') {
-        list(char * star_file, char * star_dir) ;
+        list(star_file) ;
     }
-
-
-    
 
     return 0 ;
 }
