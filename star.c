@@ -1,124 +1,105 @@
 #include <stdio.h>
-#include <sys/types.h>
 #include <stdlib.h>
-#include <dirent.h>
 #include <string.h>
-#include <sys/stat.h>
+#include <unistd.h>
 #include <linux/limits.h>
 
-
-char *
-get_path (char * dir_path, char * sub_dir)
+int
+main (int argc, char ** argv)
 {
-    char * path = (char*) malloc(sizeof(char) * PATH_MAX);
-    path = strdup(dir_path);
-    strcat(path, "/");
-    strcat(path, sub_dir);
-    return path;
-}
+    /*
+        Comman line interface
+        ./star archive <archive-file-name> <target directory path> -> zip
+        ./star list <archive-file-name> -> show the paths of all files aggregated in the <archive-file-name>
+        ./star extract <archive-file-name> -> restore all files and directories archived in <archive-file-name>
 
+        * invalid option 
+            * do not pass the option
+            * argv[1] not in "archive" or "extract" or "list" ? 
+        * case 1. "archive"
+            * # of parameter : 4
+            * target file name is invalid : already exist
+            * target directory name is invalid (not exist)
+        * case 2. "extract"
+            * # of parameter : 3
+            * target file name is invalid : not exist
+        * case 3. "list"
+            * # of parameter : 3
+            * target file name is invalid : not exist
 
-void 
-copy_file (char * sub_path, char * new_path) 
-{
-    FILE * r_fp;
-    FILE * w_fp;
-    char buffer[512]; 
-    
-    r_fp = fopen(sub_path , "rb");
-    if ( r_fp == NULL ) {
-        perror("fopen"); 
-        exit (1);
+        Q. timing for checking existance of target file name or directory ?
+            CLI에서 먼저 있는지 없는지를 체크해서, 없으면 아예 프로그램을 종료시키는 것이
+            나중에 file이나 directory를 열 때 검사하도록 미뤄두는 것보다 나을까?
+            file이나 directory를 열 때는 존재 유무 말고도 다른 문제가 발생할 수도 있으니까
+            CLI에서 먼저 해두는 게 나을 것 같다고 판단하긴 했지만,,,
+        Q. 아예 각 파라미터를 받는 함수를 따로..? Ex) get_option, get_file, get_dir ...
+        Q. 파라미터를 받는 과정 전체를 함수로 만들어보려고 했는데, star_dir이 필요한 경우와 필요 없는 경우가 있어서 조금 고민..
+    */
+
+    if (argc < 3 || (strcmp(argv[1], "archive") != 0 && strcmp(argv[1], "extract") != 0 && strcmp(argv[1], "list")) != 0) {
+        perror("ERROR: option: archive, extract, list\n") ;
+        exit(1) ;
     }
 
-    w_fp = fopen(new_path , "wb");
-    if (w_fp == NULL) {
-        perror("fopen"); 
-        exit (1);
-    }
-
-    size_t r_len;
-    while (feof(r_fp) == 0)  {
-        r_len = fread (buffer, 1, sizeof(buffer), r_fp);
-        if (r_len != fwrite (buffer, 1, r_len, w_fp)) {
-            // can i reposition the file pointer..?
-            perror("fwrite");
-            exit(1);
+    char option ;   
+    char * star_file ;
+    char * star_dir ;
+    if (strcmp(argv[1], "archive") == 0) {
+        if (argc != 4) {
+            perror("ERROR: star archive <archive-file-name> <target directory path>\n") ;
+            exit(1) ;
         }
-    }
-
-    fclose (r_fp);
-}
-
-
-void 
-copy_dir (char * dir, char * new_dir) 
-{
-    // 1. make a corresponding directory to the new (target) directory.
-    if( mkdir (new_dir, 0766) == -1 ) {
-        perror("mkdir");
-        exit(1);
-    }
-
-    // 2. open and read source directory.
-    DIR * dp;
-    dp = opendir (dir);
-    
-    if (dp == NULL) {
-        perror ("opendir: Couldn't open the directory");
-        exit(1);
-    }
-    else {
-        struct dirent * sub;
-        for( ; sub = readdir (dp); ) {
-            
-            char * sub_path = get_path(dir, sub->d_name);
-            char * new_path = get_path(new_dir, sub->d_name);
-
-            if (sub->d_type == DT_LNK) {
-                continue;
-            }
-            if (sub->d_type == DT_REG) {
-                copy_file(sub_path, new_path);
-            }
-            if (sub->d_type == DT_DIR) {
-                if( strcmp (sub->d_name, "..") != 0 && strcmp (sub->d_name, ".") != 0 ) 
-                    copy_dir(sub_path, new_path);
-            }
-
-            free(sub_path);
-            free(new_path);
+        if (access(argv[2], F_OK) == 0)
+        {
+            perror("ERROR: archive-file-name already exist\n") ;
+            exit(1) ;
         }
-        closedir(dp);
+        if (access(argv[3], R_OK) == -1)
+        {
+            perror("ERROR: target directory path do not exist\n") ;
+            exit(1) ;
+        }
+
+        option = 'a' ;
+        star_file = argv[2] ;
+        star_dir = argv[3] ;
+
+        printf("It archives %s as %s\n", star_dir, star_file) ;
     }
-    
-}
+    if (strcmp(argv[1], "extract") == 0) {
+        if (argc != 3) {
+            perror("ERROR: star extract <archive-file-name>\n") ;
+            exit(1) ;
+        }
+        if (access(argv[2], R_OK) == -1)
+        {
+            perror("ERROR: archive-file-name do not exist\n") ;
+            exit(1) ;
+        }
 
-int 
-main (int argc, char ** argv) 
-{
-    char * source = argv[1];
-    char * target = argv[2];
+        option = 'e' ;
+        star_file = argv[2] ;
 
-    // handle invalid parameters -> more cases..?
-    if (argc != 3) {
-        perror("Invalid parameters.\ncmd: ./copy <source> <target>");
-        exit(1);
+        printf("It extracts %s\n", star_file) ;
+    }
+    if (strcmp(argv[1], "list") == 0) {
+        if (argc != 3) {
+            perror("ERROR: star list <archive-file-name>\n") ;
+            exit(1) ;
+        }
+        if (access(argv[2], R_OK) == -1)
+        {
+            perror("ERROR: archive-file-name do not exist\n") ;
+            exit(1) ;
+        }
+
+        option = 'l' ;
+        star_file = argv[2] ;
+
+        printf("It lists %s\n", star_file) ;
     }
 
-    // make 1st target directory
-    if (mkdir(target, 0766) == -1) {
-        perror("mkdir");
-        exit(1); 
-    }
-    
-    // make a path of 1st copied directory -> size of array..?
-    strcat(target, "/");
-    if (source[0] == '.' && source[1] == '/') // is it alright..?
-        source = source + 2;   
-    strcat(target, source);
 
-    copy_dir(source, target);
 
-    return 0;
+    return 0 ;
 }
