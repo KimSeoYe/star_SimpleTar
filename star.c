@@ -28,7 +28,7 @@ get_parameters (int argc, int ** argv, char option, char * star_file, char * sta
             * target file name is invalid : not exist
 
         Q. timing for checking existance of target file name or directory ?
-            CLI에서 먼저 있는지 없는지를 체크해서, 없으면 아예 프로그램을 종료시키는 것이
+            CLI에서 먼저 파일이나 디렉토리가 있는지 없는지를 체크해서, 없으면 아예 프로그램을 종료시키는 것이
             나중에 file이나 directory를 열 때 검사하도록 미뤄두는 것보다 나을까?
             file이나 directory를 열 때는 존재 유무 말고도 다른 문제가 발생할 수도 있으니까
             CLI에서 먼저 해두는 게 나을 것 같다고 판단하긴 했지만,,,
