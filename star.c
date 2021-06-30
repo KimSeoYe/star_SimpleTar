@@ -130,6 +130,7 @@ get_parameters (int argc, char ** argv, char * option, char * star_file, char * 
         data strucrue : 파일명의 크기 - 파일명 - 파일 내용의 크기 - 파일 내용 ? (v)
                         or 파일명의 크기 - 파일 내용의 크기 - 파일명 - 파일 내용 ?
 
+    ***** before changing header struct
     2. extract 인 경우
 
         * star_file 이라는 이름의 파일을 연다.
@@ -187,22 +188,20 @@ make_header(char * dir)
 void
 write_header_data(FILE * w_fp, Header * h)
 {
-    if (sizeof(h->type_id) != fwrite(&h->type_id, 1, sizeof(h->type_id), w_fp)) {
-        perror("ERROR: fwrite - h->type_id") ;
-        exit(1) ;
-    }
-    if (sizeof(h->name_size) != fwrite(&h->name_size, 1, sizeof(h->name_size), w_fp)) {
-        perror("ERROR: fwrite - h->name_size") ;
-        exit(1) ;
-    }
-    if (sizeof(h->data_size) != fwrite(&h->data_size, 1, sizeof(h->data_size), w_fp)) {
-        perror("ERROR: fwrite - h->data_size") ;
-        exit(1) ;
-    }
-    if (h->name_size != fwrite(h->path_name, 1, h->name_size, w_fp)) {
-        perror("ERROR: fwrite - h->data_size") ;
-        exit(1) ;
-    }
+    if (fwrite(&h->type_id, 1, sizeof(h->type_id), w_fp) != sizeof(h->type_id)) 
+        goto err_exit ;
+    if (fwrite(&h->name_size, 1, sizeof(h->name_size), w_fp) != sizeof(h->name_size)) 
+        goto err_exit ;
+    if (fwrite(&h->data_size, 1, sizeof(h->data_size), w_fp) != sizeof(h->data_size)) 
+        goto err_exit ;
+    if (fwrite(h->path_name, 1, h->name_size, w_fp) != h->name_size) 
+        goto err_exit ;
+
+    return ;
+
+err_exit:
+    perror("Error: fail to write a header data") ;
+    exit(1) ;
 }
 
 void
@@ -220,9 +219,9 @@ write_contents_data (FILE * w_fp, Header * h, char * target_path)
         while (feof(r_fp) == 0) {
             char buffer[512];
             r_len = fread(buffer, 1, sizeof(buffer), r_fp) ;
+            // printf("%s", buffer) ; -> something wrong....
             if (r_len != fwrite(buffer, 1, r_len, w_fp)) {
-                perror("ERROR: fwrite - file contetns") ;
-                exit(1) ;
+                // do something?
             }
         }       
         fclose(r_fp) ;
@@ -232,7 +231,7 @@ write_contents_data (FILE * w_fp, Header * h, char * target_path)
 void
 archive (char * star_file, char * star_dir) 
 {
-    Header * head = make_header(star_dir) ;
+    Header * head = make_header(star_dir) ; // local!
     
     FILE * w_fp ;
     w_fp = fopen(star_file, "wb") ;
@@ -245,7 +244,7 @@ archive (char * star_file, char * star_dir)
     write_contents_data(w_fp, head, star_dir) ;
 
     free(head) ;
-    rewind(w_fp) ;
+    // rewind(w_fp) ; -> 전혀
     fclose(w_fp) ;
 }
 
@@ -257,42 +256,30 @@ read_header (FILE * r_fp)
 {
     Header * h = (Header *) malloc(sizeof(Header)) ;
 
-    if (sizeof(h->type_id) != fread(&h->type_id, 1, sizeof(h->type_id), r_fp)) {
-        perror("ERROR: fread - h->type_id") ;
-        exit(1) ;
-    }
-    if (sizeof(h->name_size) != fread(&h->name_size, 1, sizeof(h->name_size), r_fp)) {
-        perror("ERROR: fread - h->name_size") ;
-        exit(1) ;
-    }
-    if (sizeof(h->data_size) != fread(&h->data_size, 1, sizeof(h->data_size), r_fp)) {
-        perror("ERROR: fread - h->data_size") ;
-        exit(1) ;
-    }
-    if (h->name_size != fread(h->path_name, 1, h->name_size, r_fp)) {
-        perror("ERROR: fread - new file_name @open_new_file()") ;
-        exit(1) ;
-    }
+    if (fread(&h->type_id, 1, sizeof(h->type_id), r_fp) != sizeof(h->type_id)) 
+        goto err_exit ;
+    if (fread(&h->name_size, 1, sizeof(h->name_size), r_fp) != sizeof(h->name_size))
+        goto err_exit ;
+    if (fread(&h->data_size, 1, sizeof(h->data_size), r_fp) != sizeof(h->data_size))
+        goto err_exit ;
+    if (fread(h->path_name, 1, h->name_size, r_fp) != h->name_size) 
+        goto err_exit ;
 
     return h ;
+
+err_exit:
+    perror("Error: fail to read a header") ;
+    exit(1) ;
 }
 
 FILE *
 open_new_file (FILE * r_fp, Header * h)
 {
-    // char * file_name = (char *) malloc(sizeof(char) * h->name_size) ;
-    // if (h->name_size != fread(file_name, 1, h->name_size, r_fp)) {
-    //     perror("ERROR: fread - new file_name @open_new_file()") ;
-    //     exit(1) ;
-    // }
-
-    FILE * n_fp = fopen(file_name, "wb") ;
+    FILE * n_fp = fopen(h->path_name, "wb") ;
     if (n_fp == NULL) {
         perror("ERROR: fopen - @open_new_file()") ; 
         exit(1) ;
     }
-
-    free(file_name) ;
     return n_fp ;
 }
 
@@ -301,7 +288,8 @@ write_new_file(FILE * w_fp, FILE * r_fp, Header * h)
 {
     // * h->data_size 만큼의 파일내용의 크기를 읽는다
     // *** buffer size를 정해놓고 연속적으로 읽어야 함
-    // * 읽어낸 크기 만큼의 파일 내용을 읽으며 새로 열린 파일에 쓴다.
+    
+    // * 버퍼 크기 만큼의 파일 내용을 읽으며 새로 열린 파일에 쓴다.
 }
 
 void
@@ -342,7 +330,7 @@ main (int argc, char ** argv)
     char star_file[PATH_MAX] ;
     char star_dir[PATH_MAX] ;
 
-    get_parameters (argc, argv, &option, star_file, star_dir) ;
+    get_parameters(argc, argv, &option, star_file, star_dir) ;
 
     if (option == 'a') {
         archive(star_file, star_dir) ;
