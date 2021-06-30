@@ -22,7 +22,6 @@ get_parameters (int argc, char ** argv, char * option, char * star_file, char * 
         ./star archive <archive-file-name> <target directoxry path> -> zip
         ./star list <archive-file-name> -> show the paths of all files aggregated in the <archive-file-name>
         ./star extract <archive-file-name> -> restore all files and directories archived in <archive-file-name>
-
         * invalid option 
             * do not pass the option
             * argv[1] not in "archive" or "extract" or "list" ? 
@@ -36,7 +35,6 @@ get_parameters (int argc, char ** argv, char * option, char * star_file, char * 
         * case 3. "list"
             * # of parameter : 3
             * target file name is invalid : not exist
-
         Q. timing for checking existance of target file name or directory ?
             CLI에서 먼저 파일이나 디렉토리가 있는지 없는지를 체크해서, 없으면 아예 프로그램을 종료시키는 것이
             나중에 file이나 directory를 열 때 검사하도록 미뤄두는 것보다 나을까?
@@ -105,15 +103,12 @@ get_parameters (int argc, char ** argv, char * option, char * star_file, char * 
 
 /*
     1개의 파일에 대해 동작하는 프로그램 만들기
-
     1. archive 인 경우
-
         * header 구조체 선언
         * stat 으로 star_dir 의 정보를 읽는다 (type_id, data_size) -> header 구조체에 저장한다
             * directory일 경우 length가 0이어야 한다!!
         * star_dir의 이름의 크기를 header 구조체에 저장한다.
         * return header...
-
         * star_file 이라는 이름으로 새로운 파일을 연다. (write)
         * header structure 의 정보를 쓴다
         
@@ -122,39 +117,27 @@ get_parameters (int argc, char ** argv, char * option, char * star_file, char * 
         * -> directory가 아니면
             * star_dir 파일을 연다 (read)
             * star_dir 의 내용을 읽으며 그 뒤에 바로 이어 쓴다.
-
         * closedir, fclose, ...
         
         Q. 읽으면서 바로 write 하는게 나을까? 아니면 파일을 읽는 과정과 쓰는 과정을 분리하는게 좋을까? -> 읽으면서 write 해보자
         Q. 파일 이름의 크기를 따로 저장해 둬야 할 것 같다 
         data strucrue : 파일명의 크기 - 파일명 - 파일 내용의 크기 - 파일 내용 ? (v)
                         or 파일명의 크기 - 파일 내용의 크기 - 파일명 - 파일 내용 ?
-
-    ***** before changing header struct
     2. extract 인 경우
-
         * star_file 이라는 이름의 파일을 연다.
-
         * header structure를 읽는다
-
         * h->name_size 만큼의 이름을 읽는다
         * 읽어낸 이름으로 새로운 파일을 연다.
         * h->data_size 만큼의 파일내용의 크기를 읽는다
         * 읽어낸 크기 만큼의 파일 내용을 읽으며 새로 열린 파일에 쓴다.
-
         * closedir, fclose, ...
-
     3. list 인 경우
-
         * star_file 이라는 이름의 파일을 연다.
-
         * header 에서 파일이름의 크기를 읽는다 -> 그 크기 만큼의 파일 이름을 읽는다
         * 읽어낸 파일 이름을 출력한다.
-
         * header 에서 파일 내용의 크기를 읽는다
         * 그 크기 만큼 file pointer를 이동시킨다 -> how ?
             * fseek(SEEKK_CUR, 읽어낸 크기) ?
-
     Q. 어느 정도를 함수로 만들어야 할까
     
 */
@@ -188,7 +171,7 @@ make_header(char * dir)
 void
 write_header_data(FILE * w_fp, Header * h)
 {
-    if (fwrite(&h->type_id, 1, sizeof(h->type_id), w_fp) != sizeof(h->type_id)) 
+     if (fwrite(&h->type_id, 1, sizeof(h->type_id), w_fp) != sizeof(h->type_id)) 
         goto err_exit ;
     if (fwrite(&h->name_size, 1, sizeof(h->name_size), w_fp) != sizeof(h->name_size)) 
         goto err_exit ;
@@ -219,9 +202,9 @@ write_contents_data (FILE * w_fp, Header * h, char * target_path)
         while (feof(r_fp) == 0) {
             char buffer[512];
             r_len = fread(buffer, 1, sizeof(buffer), r_fp) ;
-            // printf("%s", buffer) ; -> something wrong....
             if (r_len != fwrite(buffer, 1, r_len, w_fp)) {
-                // do something?
+                perror("ERROR: fwrite - file contetns") ;
+                exit(1) ;
             }
         }       
         fclose(r_fp) ;
@@ -231,7 +214,7 @@ write_contents_data (FILE * w_fp, Header * h, char * target_path)
 void
 archive (char * star_file, char * star_dir) 
 {
-    Header * head = make_header(star_dir) ; // local!
+    Header * head = make_header(star_dir) ;
     
     FILE * w_fp ;
     w_fp = fopen(star_file, "wb") ;
@@ -244,7 +227,7 @@ archive (char * star_file, char * star_dir)
     write_contents_data(w_fp, head, star_dir) ;
 
     free(head) ;
-    // rewind(w_fp) ; -> 전혀
+    rewind(w_fp) ;
     fclose(w_fp) ;
 }
 
@@ -256,30 +239,36 @@ read_header (FILE * r_fp)
 {
     Header * h = (Header *) malloc(sizeof(Header)) ;
 
-    if (fread(&h->type_id, 1, sizeof(h->type_id), r_fp) != sizeof(h->type_id)) 
-        goto err_exit ;
-    if (fread(&h->name_size, 1, sizeof(h->name_size), r_fp) != sizeof(h->name_size))
-        goto err_exit ;
-    if (fread(&h->data_size, 1, sizeof(h->data_size), r_fp) != sizeof(h->data_size))
-        goto err_exit ;
-    if (fread(h->path_name, 1, h->name_size, r_fp) != h->name_size) 
-        goto err_exit ;
+    if (sizeof(h->type_id) != fread(&h->type_id, 1, sizeof(h->type_id), r_fp)) {
+        perror("ERROR: fread - h->type_id") ;
+        exit(1) ;
+    }
+    if (sizeof(h->name_size) != fread(&h->name_size, 1, sizeof(h->name_size), r_fp)) {
+        perror("ERROR: fread - h->name_size") ;
+        exit(1) ;
+    }
+    if (sizeof(h->data_size) != fread(&h->data_size, 1, sizeof(h->data_size), r_fp)) {
+        perror("ERROR: fread - h->data_size") ;
+        exit(1) ;
+    }
+    if (h->name_size != fread(h->path_name, 1, h->name_size, r_fp)) {
+        perror("ERROR: fread - new file_name @open_new_file()") ;
+        exit(1) ;
+    }
 
     return h ;
-
-err_exit:
-    perror("Error: fail to read a header") ;
-    exit(1) ;
 }
 
 FILE *
 open_new_file (FILE * r_fp, Header * h)
 {
+
     FILE * n_fp = fopen(h->path_name, "wb") ;
     if (n_fp == NULL) {
         perror("ERROR: fopen - @open_new_file()") ; 
         exit(1) ;
     }
+
     return n_fp ;
 }
 
@@ -288,8 +277,7 @@ write_new_file(FILE * w_fp, FILE * r_fp, Header * h)
 {
     // * h->data_size 만큼의 파일내용의 크기를 읽는다
     // *** buffer size를 정해놓고 연속적으로 읽어야 함
-    
-    // * 버퍼 크기 만큼의 파일 내용을 읽으며 새로 열린 파일에 쓴다.
+    // * 읽어낸 크기 만큼의 파일 내용을 읽으며 새로 열린 파일에 쓴다.
 }
 
 void
@@ -330,7 +318,7 @@ main (int argc, char ** argv)
     char star_file[PATH_MAX] ;
     char star_dir[PATH_MAX] ;
 
-    get_parameters(argc, argv, &option, star_file, star_dir) ;
+    get_parameters (argc, argv, &option, star_file, star_dir) ;
 
     if (option == 'a') {
         archive(star_file, star_dir) ;
